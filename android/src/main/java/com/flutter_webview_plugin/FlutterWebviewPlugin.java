@@ -11,6 +11,11 @@ import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.os.Build;
 
+import com.flutter_webview_plugin.jsapi.IJSCallback;
+import com.flutter_webview_plugin.jsapi.JsApiModuleEx;
+
+import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 
 import io.flutter.plugin.common.MethodCall;
@@ -24,7 +29,7 @@ import io.flutter.plugin.common.PluginRegistry;
 public class FlutterWebviewPlugin implements MethodCallHandler, PluginRegistry.ActivityResultListener {
     private Activity activity;
     private WebviewManager webViewManager;
-    static MethodChannel channel;
+    public static MethodChannel channel;
     private static final String CHANNEL_NAME = "flutter_webview_plugin";
 
     public static void registerWith(PluginRegistry.Registrar registrar) {
@@ -77,6 +82,9 @@ public class FlutterWebviewPlugin implements MethodCallHandler, PluginRegistry.A
             case "cleanCookies":
                 cleanCookies(call, result);
                 break;
+            case "invokeJsCallback":
+                invokeJsCallback(call, result);
+                break;
             default:
                 result.notImplemented();
                 break;
@@ -97,16 +105,25 @@ public class FlutterWebviewPlugin implements MethodCallHandler, PluginRegistry.A
         Map<String, String> headers = call.argument("headers");
         boolean scrollBar = call.argument("scrollBar");
         boolean allowFileURLs = call.argument("allowFileURLs");
+        List<String> jsApiModules = call.argument("jsApiModules");
+
+        if (jsApiModules != null && !jsApiModules.isEmpty()) {
+            for (String module : jsApiModules) {
+                JsApiModuleEx.getInstance().addJsApiModule(module);
+            }
+        }
 
         if (webViewManager == null || webViewManager.closed == true) {
             webViewManager = new WebviewManager(activity);
         }
 
+
         FrameLayout.LayoutParams params = buildLayoutParams(call);
 
         activity.addContentView(webViewManager.webView, params);
 
-        webViewManager.openUrl(withJavascript,
+        webViewManager.openUrl(activity,
+                withJavascript,
                 clearCache,
                 hidden,
                 clearCookies,
@@ -230,6 +247,10 @@ public class FlutterWebviewPlugin implements MethodCallHandler, PluginRegistry.A
         result.success(null);
     }
 
+    private void invokeJsCallback(MethodCall call, final MethodChannel.Result result) {
+        webViewManager.invokeJSCallback(call);
+    }
+
     private int dp2px(Context context, float dp) {
         final float scale = context.getResources().getDisplayMetrics().density;
         return (int) (dp * scale + 0.5f);
@@ -242,4 +263,5 @@ public class FlutterWebviewPlugin implements MethodCallHandler, PluginRegistry.A
         }
         return false;
     }
+
 }

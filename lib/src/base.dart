@@ -29,6 +29,7 @@ class FlutterWebviewPlugin {
   final _onScrollXChanged = StreamController<double>.broadcast();
   final _onScrollYChanged = StreamController<double>.broadcast();
   final _onHttpError = StreamController<WebViewHttpError>.broadcast();
+  final _onJsApiCalled = StreamController<JsApiCall>.broadcast();
 
   Future<Null> _handleMessages(MethodCall call) async {
     switch (call.method) {
@@ -54,6 +55,9 @@ class FlutterWebviewPlugin {
       case 'onHttpError':
         _onHttpError.add(WebViewHttpError(call.arguments['code'], call.arguments['url']));
         break;
+      case 'onJsApiCalled':
+        _onJsApiCalled.add(JsApiCall(call.arguments['module'],call.arguments['name'],call.arguments['parameters'],call.arguments['callback']));
+        break;
     }
   }
 
@@ -75,6 +79,8 @@ class FlutterWebviewPlugin {
   Stream<double> get onScrollXChanged => _onScrollXChanged.stream;
 
   Stream<WebViewHttpError> get onHttpError => _onHttpError.stream;
+
+  Stream<JsApiCall> get onJsApiCall => _onJsApiCalled.stream;
 
   /// Start the Webview with [url]
   /// - [headers] specify additional HTTP headers
@@ -110,6 +116,7 @@ class FlutterWebviewPlugin {
     bool supportMultipleWindows,
     bool appCacheEnabled,
     bool allowFileURLs,
+    List<String> jsApiModules,
   }) async {
     final args = <String, dynamic>{
       'url': url,
@@ -140,6 +147,10 @@ class FlutterWebviewPlugin {
         'height': rect.height,
       };
     }
+
+    if(jsApiModules != null) {
+      args['jsApiModules'] = jsApiModules;
+    }
     await _channel.invokeMethod('launch', args);
   }
 
@@ -147,6 +158,11 @@ class FlutterWebviewPlugin {
   Future<String> evalJavascript(String code) async {
     final res = await _channel.invokeMethod('eval', {'code': code});
     return res;
+  }
+
+  Future<String> invokeJsCallback(String callbackName,String param) async {
+    final result = await _channel.invokeMethod('invokeJsCallback',{'callbackName':callbackName,'param':param});
+    return result;
   }
 
   /// Close the Webview
@@ -188,8 +204,10 @@ class FlutterWebviewPlugin {
     _onScrollXChanged.close();
     _onScrollYChanged.close();
     _onHttpError.close();
+    _onJsApiCalled.close();
     _instance = null;
   }
+
 
   Future<Map<String, String>> getCookies() async {
     final cookiesString = await evalJavascript('document.cookie');
@@ -247,4 +265,23 @@ class WebViewHttpError {
 
   final String url;
   final String code;
+}
+
+class JsApiCall{
+
+  JsApiCall(this.module,this.name,this.parameters,this.callback);
+
+  final String module;
+  final String name;
+  final String parameters;
+  final String callback;
+}
+
+ abstract class JsApiCallBack{
+
+  JsApiCallBack(String callback);
+
+  void onSuccess();
+
+  void onFail();
 }
