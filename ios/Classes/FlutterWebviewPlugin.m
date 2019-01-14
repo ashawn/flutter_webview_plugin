@@ -1,12 +1,18 @@
 #import "FlutterWebviewPlugin.h"
+#import "FlutterWebAppFramework.h"
+#import "FlutterWKActionAPI.h"
 
 static NSString *const CHANNEL_NAME = @"flutter_webview_plugin";
+static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
 
 // UIWebViewDelegate
-@interface FlutterWebviewPlugin() <WKNavigationDelegate, UIScrollViewDelegate> {
+@interface FlutterWebviewPlugin() <WKNavigationDelegate, UIScrollViewDelegate, WKScriptMessageHandler> {
     BOOL _enableAppScheme;
     BOOL _enableZoom;
 }
+
+@property (nonatomic, strong) FlutterWebAppBridge *webAppBridge;
+
 @end
 
 @implementation FlutterWebviewPlugin
@@ -103,13 +109,32 @@ static NSString *const CHANNEL_NAME = @"flutter_webview_plugin";
     } else {
         rc = self.viewController.view.bounds;
     }
+    
+    [FlutterWebAppFramework sharedInstance];
+    
+    NSBundle *bundle = [NSBundle bundleForClass:FlutterWebviewPlugin.class];
+    NSString *path = [bundle pathForResource:@"flutter_webview_plugin" ofType:@"bundle"];
+    NSBundle *jsBundle = [NSBundle bundleWithPath:path];
+    
+    NSString *jsFilePath = [jsBundle pathForResource:@"FlutterWebViewAPI" ofType:@"js"];
+    NSString *jsCode = [NSString stringWithContentsOfFile:jsFilePath encoding:NSUTF8StringEncoding error:nil];
+    
+    WKUserScript *userScript = [[WKUserScript alloc] initWithSource:jsCode injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
+    WKUserContentController *controller = [[WKUserContentController alloc] init];
+    [controller addUserScript:userScript]; // iOS端往js端注入代码
+    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+    configuration.userContentController = controller;
 
-    self.webview = [[WKWebView alloc] initWithFrame:rc];
+    self.webview = [[WKWebView alloc] initWithFrame:rc configuration:configuration];
     self.webview.navigationDelegate = self;
     self.webview.scrollView.delegate = self;
     self.webview.hidden = [hidden boolValue];
     self.webview.scrollView.showsHorizontalScrollIndicator = [scrollBar boolValue];
     self.webview.scrollView.showsVerticalScrollIndicator = [scrollBar boolValue];
+    
+    [self.webview.configuration.userContentController addScriptMessageHandler:self name:kFlutterWebViewAPI];//处理YYApi，与H5交互
+    self.webAppBridge = [[FlutterWebAppBridge alloc] initWithWebView:self.webview];
+    [self.webAppBridge registerAPI:[FlutterWKActionAPI sharedInstance] forModule:[FlutterWKActionAPI sharedInstance].module];
 
     _enableZoom = [withZoom boolValue];
 
@@ -183,7 +208,11 @@ static NSString *const CHANNEL_NAME = @"flutter_webview_plugin";
         [self.webview stopLoading];
         [self.webview removeFromSuperview];
         self.webview.navigationDelegate = nil;
+        [self.webview.configuration.userContentController removeScriptMessageHandlerForName:kFlutterWebViewAPI];
         self.webview = nil;
+        
+        [self.webAppBridge unregisterAllModuleAPIs];
+        self.webAppBridge = nil;
 
         // manually trigger onDestroy
         [channel invokeMethod:@"onDestroy" arguments:nil];
@@ -286,6 +315,18 @@ static NSString *const CHANNEL_NAME = @"flutter_webview_plugin";
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
     if (scrollView.pinchGestureRecognizer.isEnabled != _enableZoom) {
         scrollView.pinchGestureRecognizer.enabled = _enableZoom;
+    }
+}
+
+#pragma mark - WKScriptMessageHandler
+//处理H5调用的API
+- (void)userContentController:(WKUserContentController *)userContentController didReceiveScriptMessage:(WKScriptMessage *)message {
+    
+    if ([message.name isEqualToString:kFlutterWebViewAPI]) {
+        id msg = message.body;
+        if ([msg isKindOfClass:NSString.class]) {
+            [self.webAppBridge webView:self.webview handleAPIWithURL:[NSURL URLWithString:msg]];
+        }
     }
 }
 

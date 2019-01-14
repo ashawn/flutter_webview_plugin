@@ -14,6 +14,7 @@ A new flutter plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.public_header_files = 'Classes/**/*.h'
+  s.resource = 'flutter_webview_plugin.bundle'
   s.dependency 'Flutter'
   
   s.ios.deployment_target = '8.0'
