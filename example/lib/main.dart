@@ -1,8 +1,9 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import 'package:flutter_webview_plugin/flutter_webview_plugin.dart';
+import 'ShareEntity.dart';
 
 const kAndroidUserAgent =
     'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Mobile Safari/537.36';
@@ -12,6 +13,9 @@ String selectedUrl = 'https://m.moschat.com/share/nativesdk';
 void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
+
+
+
   final flutterWebViewPlugin = FlutterWebviewPlugin();
 
   @override
@@ -79,6 +83,9 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+
+  static const platform = const MethodChannel('webview_native_invoke');
+
   // Instance of WebView plugin
   final flutterWebViewPlugin = FlutterWebviewPlugin();
 
@@ -179,9 +186,21 @@ class _MyHomePageState extends State<MyHomePage> {
           _history.add(
               'onJsApiCalled: ${call.module} ${call.name} ${call.parameters}');
         });
-        flutterWebViewPlugin.invokeJsCallback(call.callback, 'callback param');
+        Map param = json.decode(call.parameters);
+        var shareData = new ShareEntity.fromJson(param);
+        _nativeShare(shareData.shareuri,shareData.sharedesc);
+//        flutterWebViewPlugin.invokeJsCallback(call.callback, 'callback param');
       }
     });
+  }
+
+  Future<Null> _nativeShare(String url,String desc) async{
+    try{
+      final bool result = await platform.invokeMethod('nativeShare',<String,dynamic>{
+        'url':url,
+        'desc':desc,
+      });
+    } on PlatformException catch (e){}
   }
 
   @override

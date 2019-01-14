@@ -22,12 +22,12 @@ object ShareUtil {
             var sharedConfig = Intent().apply {
                 action = Intent.ACTION_SEND
                 type = "text/plain"
-//                putExtra(Intent.EXTRA_SUBJECT, ctx.resources.getString(R.string.share_title))
+                putExtra(Intent.EXTRA_SUBJECT, "share_title")
                 putExtra(Intent.EXTRA_TEXT, url)
             }
 
-//            var shareIntent = Intent.createChooser(sharedConfig, ctx.resources.getString(R.string.share_title))
-//            ctx.startActivity(shareIntent)
+            var shareIntent = Intent.createChooser(sharedConfig, "lalallalallalalla")
+            ctx.startActivity(shareIntent)
         }
     }
 
