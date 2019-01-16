@@ -1,11 +1,11 @@
 name: extend_webview_plugin
 description: Plugin that allow Flutter to communicate with a native Webview.
 authors:
-- ashawn <ashawn@qq.com>
+- ashawn <ashawnchang@gmail.com>
 - Kaycloud <jiangyk55@gmail.com>
 
 homepage: https://github.com/ashawn/flutter_webview_plugin
-version: 0.1.0
+version: 0.1.1
 maintainer: ashawn
 
 environment:
