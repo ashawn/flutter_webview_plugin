@@ -305,14 +305,15 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
         
         NSError *parseError;
         NSString *str = [json stringByRemovingPercentEncoding];
-        NSData *jsonData = [str dataUsingEncoding:NSUTF8StringEncoding];
-        id jsonObject =[NSJSONSerialization JSONObjectWithData:jsonData
-                                                       options:NSJSONReadingAllowFragments
-                                                         error:&parseError];
+        
+//        NSData *jsonData = [str dataUsingEncoding:NSUTF8StringEncoding];
+//        id jsonObject =[NSJSONSerialization JSONObjectWithData:jsonData
+//                                                       options:NSJSONReadingAllowFragments
+//                                                         error:&parseError];
         
         id data = @{@"module": module,
                     @"name": name,
-                    @"parameters": jsonObject,
+                    @"parameters": str,
                     @"callback": callback,
                     };
         [channel invokeMethod:@"onJsApiCalled" arguments:data];
