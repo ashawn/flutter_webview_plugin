@@ -5,9 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webview_plugin/flutter_webview_plugin.dart';
 import 'ShareEntity.dart';
 
-const kAndroidUserAgent =
-    'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Mobile Safari/537.36';
-
 String selectedUrl = 'https://m.moschat.com/share/nativesdk';
 
 void main() => runApp(MyApp());
@@ -239,7 +236,6 @@ class _MyHomePageState extends State<MyHomePage> {
                   selectedUrl,
                   rect: Rect.fromLTWH(
                       0.0, 0.0, MediaQuery.of(context).size.width, 300.0),
-                  userAgent: kAndroidUserAgent,
                 );
               },
               child: const Text('Open Webview (rect)'),
