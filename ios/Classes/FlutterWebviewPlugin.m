@@ -1,6 +1,5 @@
 #import "FlutterWebviewPlugin.h"
-#import "FlutterWebAppFramework.h"
-#import "FlutterWKActionAPI.h"
+#import "NSURL+Parameters.h"
 
 static NSString *const CHANNEL_NAME = @"flutter_webview_plugin";
 static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
@@ -10,8 +9,6 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
     BOOL _enableAppScheme;
     BOOL _enableZoom;
 }
-
-@property (nonatomic, strong) FlutterWebAppBridge *webAppBridge;
 
 @end
 
@@ -75,9 +72,31 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
     } else if ([@"reload" isEqualToString:call.method]) {
         [self reload];
         result(nil);
+    } else if ([@"invokeJsCallback" isEqualToString:call.method]) {
+        [self invokeJsCallback:call];
+        result(nil);
     } else {
         result(FlutterMethodNotImplemented);
     }
+}
+
+- (WKWebViewConfiguration *)wkConfiguration {
+    
+    NSBundle *bundle = [NSBundle bundleForClass:FlutterWebviewPlugin.class];
+    NSString *path = [bundle pathForResource:@"flutter_webview_plugin" ofType:@"bundle"];
+    NSBundle *jsBundle = [NSBundle bundleWithPath:path];
+    
+    NSString *jsFilePath = [jsBundle pathForResource:@"FlutterWebViewAPI" ofType:@"js"];
+    NSString *jsCode = [NSString stringWithContentsOfFile:jsFilePath encoding:NSUTF8StringEncoding error:nil];
+    
+    WKUserScript *userScript = [[WKUserScript alloc] initWithSource:jsCode injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
+    WKUserContentController *controller = [[WKUserContentController alloc] init];
+    [controller addUserScript:userScript]; // iOS端往js端注入代码
+    
+    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+    configuration.userContentController = controller;
+    
+    return configuration;
 }
 
 - (void)initWebview:(FlutterMethodCall*)call {
@@ -102,6 +121,15 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
     if (userAgent != (id)[NSNull null]) {
         [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"UserAgent": userAgent}];
     }
+    else{
+        UIWebView *webView = [[UIWebView alloc] init];
+        NSString *originalUA = [webView stringByEvaluatingJavaScriptFromString:@"navigator.userAgent"];
+        if ([originalUA rangeOfString:@"moschat_ios"].location == NSNotFound)
+        {
+            NSString *userAgentWithFlutter = [originalUA stringByAppendingFormat:@"moschat_ios"];
+            [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"UserAgent": userAgentWithFlutter}];
+        }
+    }
 
     CGRect rc;
     if (rect != (id)[NSNull null]) {
@@ -109,32 +137,14 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
     } else {
         rc = self.viewController.view.bounds;
     }
-    
-    [FlutterWebAppFramework sharedInstance];
-    
-    NSBundle *bundle = [NSBundle bundleForClass:FlutterWebviewPlugin.class];
-    NSString *path = [bundle pathForResource:@"flutter_webview_plugin" ofType:@"bundle"];
-    NSBundle *jsBundle = [NSBundle bundleWithPath:path];
-    
-    NSString *jsFilePath = [jsBundle pathForResource:@"FlutterWebViewAPI" ofType:@"js"];
-    NSString *jsCode = [NSString stringWithContentsOfFile:jsFilePath encoding:NSUTF8StringEncoding error:nil];
-    
-    WKUserScript *userScript = [[WKUserScript alloc] initWithSource:jsCode injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES];
-    WKUserContentController *controller = [[WKUserContentController alloc] init];
-    [controller addUserScript:userScript]; // iOS端往js端注入代码
-    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
-    configuration.userContentController = controller;
 
-    self.webview = [[WKWebView alloc] initWithFrame:rc configuration:configuration];
+    self.webview = [[WKWebView alloc] initWithFrame:rc configuration:[self wkConfiguration]];
     self.webview.navigationDelegate = self;
     self.webview.scrollView.delegate = self;
     self.webview.hidden = [hidden boolValue];
     self.webview.scrollView.showsHorizontalScrollIndicator = [scrollBar boolValue];
     self.webview.scrollView.showsVerticalScrollIndicator = [scrollBar boolValue];
-    
     [self.webview.configuration.userContentController addScriptMessageHandler:self name:kFlutterWebViewAPI];//处理YYApi，与H5交互
-    self.webAppBridge = [[FlutterWebAppBridge alloc] initWithWebView:self.webview];
-    [self.webAppBridge registerAPI:[FlutterWKActionAPI sharedInstance] forModule:[FlutterWKActionAPI sharedInstance].module];
 
     _enableZoom = [withZoom boolValue];
 
@@ -210,9 +220,6 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
         self.webview.navigationDelegate = nil;
         [self.webview.configuration.userContentController removeScriptMessageHandlerForName:kFlutterWebViewAPI];
         self.webview = nil;
-        
-        [self.webAppBridge unregisterAllModuleAPIs];
-        self.webAppBridge = nil;
 
         // manually trigger onDestroy
         [channel invokeMethod:@"onDestroy" arguments:nil];
@@ -261,6 +268,60 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
 - (void)cleanCookies {
     [[NSURLSession sharedSession] resetWithCompletionHandler:^{
         }];
+}
+
+- (void)invokeJsCallback:(FlutterMethodCall*)call {
+    if (self.webview != nil) {
+        NSString *callback = call.arguments[@"callbackName"];
+        id param = call.arguments[@"param"];
+        id returnValue = param ? : NSNull.null;
+        NSDictionary *result = @{@"result": returnValue};
+        NSData *jsonData = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+        NSString *json = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        
+        NSString *javascript = [NSString stringWithFormat:@"YYApiCore.invokeWebMethod(\"%@\", %@.result);", callback, json];
+        
+        NSLog(@"wkwebview [+] WKWebView Execute javascript: %@.", javascript);
+        [self.webview evaluateJavaScript:javascript completionHandler:nil];
+    }
+}
+
+- (void)handleAPIWithURL:(NSURL *)url
+{
+    /**
+     *  Example: yyapi://ui/push?p={uri:'xxx'}&cb=callback
+     *      - Module: ui
+     *      - Name: Push
+     *      - Parameter: {uri:'xxx'}
+     */
+    NSString *module = url.host;
+    NSString *json = url[@"p"];
+    json = [json stringByRemovingPercentEncoding]; //从URL里面截取参数自动编码了一次
+    NSString *callback = url[@"cb"];
+    NSArray *pathComponents = url.pathComponents;
+    if (pathComponents.count == 2) {
+        
+        NSString *name = [pathComponents objectAtIndex:1];
+        
+        NSError *parseError;
+        NSString *str = [json stringByRemovingPercentEncoding];
+        NSData *jsonData = [str dataUsingEncoding:NSUTF8StringEncoding];
+        id jsonObject =[NSJSONSerialization JSONObjectWithData:jsonData
+                                                       options:NSJSONReadingAllowFragments
+                                                         error:&parseError];
+        
+        id data = @{@"module": module,
+                    @"name": name,
+                    @"parameters": jsonObject,
+                    @"callback": callback,
+                    };
+        [channel invokeMethod:@"onJsApiCalled" arguments:data];
+    }
+    else
+    {
+        NSLog(@"wkwebview [YYWebAppFramework] Invalid url.");
+    }
+    
 }
 
 #pragma mark -- WkWebView Delegate
@@ -325,7 +386,7 @@ static NSString * const kFlutterWebViewAPI = @"YYWKWebViewAPI";
     if ([message.name isEqualToString:kFlutterWebViewAPI]) {
         id msg = message.body;
         if ([msg isKindOfClass:NSString.class]) {
-            [self.webAppBridge webView:self.webview handleAPIWithURL:[NSURL URLWithString:msg]];
+            [self handleAPIWithURL:[NSURL URLWithString:msg]];
         }
     }
 }
